@@ -1,4 +1,4 @@
-# Commit 1: Setup inicial
+Setup inicial
 
 Este commit establece la base del proyecto ComercioConecta con:
 
@@ -23,7 +23,3 @@ Este commit establece la base del proyecto ComercioConecta con:
 ```bash
 python main.py
 ```
-
-## Próximos pasos (commit2)
-- Agregar validaciones en el API de agregado
-- Implementar manejo de errores para productos inexistentes y duplicados
