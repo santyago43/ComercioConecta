@@ -1,0 +1,2 @@
+# No external dependencies needed for commit1_setup
+# Only uses standard library
