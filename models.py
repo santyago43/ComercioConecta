@@ -29,5 +29,13 @@ class Relationship:
         self.product_b = product_b
         self.weight = float(weight)  # Ensure it's stored as float
 
+    def to_dict(self):
+        """Convert relationship to dictionary for JSON serialization"""
+        return {
+            "product_a": self.product_a.product_id,
+            "product_b": self.product_b.product_id,
+            "weight": self.weight
+        }
+
     def __repr__(self):
         return f"Relationship({self.product_a.product_id} <-> {self.product_b.product_id}, weight={self.weight})"

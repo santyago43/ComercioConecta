@@ -109,5 +109,19 @@ class CommercialGraph:
         del self.graph[product_a][product_b]
         del self.graph[product_b][product_a]
 
+    def to_dict(self):
+        """Convert graph to dictionary for JSON serialization"""
+        return {
+            "products": [{"id": p.product_id, "name": p.name} for p in self.get_products()],
+            "relationships": [
+                {
+                    "product_a": p_a.product_id,
+                    "product_b": p_b.product_id,
+                    "weight": weight
+                }
+                for p_a, p_b, weight in self.get_relationships()
+            ]
+        }
+
     def __repr__(self):
         return f"CommercialGraph(products={len(self.products)}, relationships={len(self.get_relationships())})"
