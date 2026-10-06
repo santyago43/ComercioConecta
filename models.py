@@ -22,12 +22,12 @@ class Relationship:
             raise ValueError("Cannot create relationship with same product")
 
         # Validate weight is in (0, 1]
-        if not (0 < weight <= 1):
-            raise ValueError("Weight must be in range (0, 1]")
+        if not isinstance(weight, (int, float)) or not (0 < weight <= 1):
+            raise ValueError("Weight must be a numeric value in range (0, 1]")
 
         self.product_a = product_a
         self.product_b = product_b
-        self.weight = weight
+        self.weight = float(weight)  # Ensure it's stored as float
 
     def __repr__(self):
         return f"Relationship({self.product_a.product_id} <-> {self.product_b.product_id}, weight={self.weight})"

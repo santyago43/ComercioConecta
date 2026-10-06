@@ -1,2 +1,2 @@
-# No external dependencies needed for commit1_setup
+# No external dependencies needed for commit2_core
 # Only uses standard library
