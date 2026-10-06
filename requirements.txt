@@ -1,2 +1,1 @@
-# No external dependencies needed for commit2_core
-# Only uses standard library
+Flask>=3.0,<4.0
