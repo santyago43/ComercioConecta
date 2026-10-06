@@ -1,8 +1,8 @@
-# Commit 2: Core con validaciones y CLI
+Setup inicial
 
 Este commit mejora la base del proyecto agregando:
 
-## Mejoras respecto al commit1
+## Mejoras respecto al commit anterior
 - Validaciones mejoradas en `Relationship` (verificación de tipo numérico para peso)
 - Manejo de errores comprehensivo en todas las operaciones
 - Prevención de relaciones duplicadas (evita sobrescritura silenciosa)
