@@ -117,6 +117,86 @@ def get_graph_info():
     return jsonify(graph.to_dict()), 200
 
 
+@app.route('/explore/bfs/<product_id>', methods=['GET'])
+def explore_bfs(product_id):
+    """Explore products using BFS from a starting product"""
+    try:
+        depth = request.args.get('depth', 2, type=int)
+        if depth < 1:
+            return jsonify({"error": "Depth must be at least 1"}), 400
+
+        results = graph.bfs(product_id, depth)
+
+        return jsonify({
+            "start_product": product_id,
+            "max_depth": depth,
+            "results_count": len(results),
+            "results": [
+                {
+                    "product_id": p.product_id,
+                    "product_name": p.name,
+                    "distance": distance,
+                    "cumulative_weight": weight
+                }
+                for p, distance, weight in results
+            ]
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/explore/dfs/<product_id>', methods=['GET'])
+def explore_dfs(product_id):
+    """Explore products using DFS from a starting product"""
+    try:
+        depth = request.args.get('depth', 2, type=int)
+        if depth < 1:
+            return jsonify({"error": "Depth must be at least 1"}), 400
+
+        results = graph.dfs(product_id, depth)
+
+        return jsonify({
+            "start_product": product_id,
+            "max_depth": depth,
+            "results_count": len(results),
+            "results": [
+                {
+                    "product_id": p.product_id,
+                    "product_name": p.name,
+                    "distance": distance,
+                    "cumulative_weight": weight
+                }
+                for p, distance, weight in results
+            ]
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/components', methods=['GET'])
+def get_components():
+    """Get all connected components in the graph"""
+    components = graph.get_connected_components()
+
+    return jsonify({
+        "components_count": len(components),
+        "components": [
+            [
+                {
+                    "product_id": p.product_id,
+                    "product_name": p.name
+                }
+                for p in component
+            ]
+            for component in components
+        ]
+    }), 200
+
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({"error": "Endpoint not found"}), 404
@@ -133,4 +213,4 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='127.0.0.1', port=5000)
+    app.run(debug=False, host='127.0.0.1', port=5000)
