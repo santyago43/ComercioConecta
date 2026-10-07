@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.cover
+*.pyw
+*.rej
+*~
+.db
+.idea
+.vscode
+*.sqlite3
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+.conda/
+
+# API keys and secrets
+.env
+*.env
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache

@@ -1,1 +1,5 @@
+# requirements.txt - Dependencias del proyecto ComercioConecta
+# Lista de paquetes de Python necesarios para ejecutar la API y el frontend.
+# Versiones especificadas para garantizar compatibilidad y evitar actualizaciones rotas.
 Flask>=3.0,<4.0
+streamlit>=1.64,<2.0
