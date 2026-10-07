@@ -1,3 +1,20 @@
+"""
+ComercioConecta Graph Module
+============================
+
+This module defines the `CommercialGraph` class, which represents an undirected weighted graph
+of products and their relationships. It provides methods for:
+
+- Adding/removing products and relationships
+- Retrieving products and relationships
+- Performing graph traversals (BFS/DFS) with depth limits
+- Finding connected components
+- Serializing the graph to a dictionary for JSON API responses
+
+The graph uses an adjacency list representation with a dictionary for O(1) product lookup by ID.
+Relationships are stored symmetrically (undirected) with a numeric weight indicating strength.
+"""
+
 from collections import deque
 from models import Product, Relationship
 
