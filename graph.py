@@ -1,3 +1,4 @@
+from collections import deque
 from models import Product, Relationship
 
 
@@ -108,6 +109,108 @@ class CommercialGraph:
         # Remove the relationship (undirected graph)
         del self.graph[product_a][product_b]
         del self.graph[product_b][product_a]
+
+    def bfs(self, start_product_id, max_depth=2):
+        """
+        Breadth-First Search from a starting product
+        Returns list of tuples: (product, distance, cumulative_weight)
+        """
+        start_product = self.get_product(start_product_id)
+        if start_product is None:
+            raise ValueError(f"Product {start_product_id} does not exist")
+
+        # Queue for BFS: (product, distance, cumulative_weight)
+        queue = deque([(start_product, 0, 1.0)])  # Start with weight 1.0 (multiplicative identity)
+        visited = {start_product}
+        results = []
+
+        while queue:
+            current_product, distance, cumulative_weight = queue.popleft()
+
+            # Don't include the starting product in results with distance 0
+            if distance > 0:
+                results.append((current_product, distance, cumulative_weight))
+
+            # Stop if we've reached max depth
+            if distance >= max_depth:
+                continue
+
+            # Explore neighbors
+            for neighbor, weight in self.graph[current_product].items():
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    new_cumulative_weight = cumulative_weight * weight
+                    queue.append((neighbor, distance + 1, new_cumulative_weight))
+
+        # Sort by distance (ascending) and then by cumulative weight (descending)
+        results.sort(key=lambda x: (x[1], -x[2]))
+        return results
+
+    def dfs(self, start_product_id, max_depth=2):
+        """
+        Depth-First Search from a starting product
+        Returns list of tuples: (product, distance, cumulative_weight, path)
+        """
+        start_product = self.get_product(start_product_id)
+        if start_product is None:
+            raise ValueError(f"Product {start_product_id} does not exist")
+
+        # Stack for DFS: (product, distance, cumulative_weight, path)
+        stack = [(start_product, 0, 1.0, [start_product])]
+        results = []
+
+        while stack:
+            current_product, distance, cumulative_weight, path = stack.pop()
+
+            # Don't include the starting product in results with distance 0
+            if distance > 0:
+                results.append((current_product, distance, cumulative_weight, list(path)))
+
+            # Stop if we've reached max depth
+            if distance >= max_depth:
+                continue
+
+            # Explore neighbors (in reverse order to maintain consistent ordering)
+            neighbors = list(self.graph[current_product].items())
+            for neighbor, weight in reversed(neighbors):
+                if neighbor not in path:  # Avoid cycles
+                    new_path = path + [neighbor]
+                    new_cumulative_weight = cumulative_weight * weight
+                    stack.append((neighbor, distance + 1, new_cumulative_weight, new_path))
+
+        # Sort by distance (ascending) and then by cumulative weight (descending)
+        results.sort(key=lambda x: (x[1], -x[2]))
+        # Return without the path for consistency with BFS interface
+        return [(product, distance, weight) for product, distance, weight, _ in results]
+
+    def get_connected_components(self):
+        """
+        Find all connected components in the graph
+        Returns list of lists, where each inner list contains products in a component
+        """
+        visited = set()
+        components = []
+
+        for product in self.products.values():
+            if product not in visited:
+                # Start BFS from this unvisited product
+                component = []
+                queue = deque([product])
+                visited.add(product)
+
+                while queue:
+                    current_product = queue.popleft()
+                    component.append(current_product)
+
+                    # Add unvisited neighbors to queue
+                    for neighbor in self.graph[current_product]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+
+                components.append(component)
+
+        return components
 
     def to_dict(self):
         """Convert graph to dictionary for JSON serialization"""
