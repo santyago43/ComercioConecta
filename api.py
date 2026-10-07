@@ -1,9 +1,68 @@
+"""
+ComercioConecta API
+===================
+
+This Flask application provides a RESTful API for managing a commercial graph of products and their relationships.
+It supports CRUD operations on products and relationships, as well as graph traversal (BFS/DFS) and connected component analysis.
+
+Endpoints:
+- GET /products -> list all products
+- GET /products/<product_id> -> get a specific product
+- POST /products -> add a new product (requires JSON with 'id' and 'name')
+- DELETE /products/<product_id> -> delete a product
+- GET /relationships -> list all relationships
+- POST /relationships -> add a relationship (requires JSON with 'product_a', 'product_b', 'weight')
+- GET /graph/info -> general info about the graph (node/edge counts)
+- GET /explore/bfs/<product_id>?depth=<int> -> BFS traversal from product_id up to given depth
+- GET /explore/dfs/<product_id>?depth=<int> -> DFS traversal from product_id up to given depth
+- GET /components -> list connected components in the graph
+
+Error handling returns appropriate HTTP status codes and JSON error messages.
+"""
 from flask import Flask, request, jsonify
 from models import Product, Relationship
 from graph import CommercialGraph
 
 app = Flask(__name__)
 graph = CommercialGraph()
+
+# Datos de prueba iniciales (se cargan al arrancar la API)
+_initial_products = [
+    ("P001", "Leche"),
+    ("P002", "Pan"),
+    ("P003", "Huevos"),
+    ("P004", "Mantequilla"),
+    ("P005", "Café"),
+    ("P006", "Azúcar"),
+    ("P007", "Aceite"),
+    ("P008", "Arroz"),
+]
+
+_initial_relationships = [
+    ("P001", "P002", 0.85),  # Leche - Pan
+    ("P001", "P003", 0.70),  # Leche - Huevos
+    ("P002", "P004", 0.90),  # Pan - Mantequilla
+    ("P003", "P004", 0.65),  # Huevos - Mantequilla
+    ("P005", "P006", 0.80),  # Café - Azúcar
+    ("P007", "P008", 0.75),  # Aceite - Arroz
+    ("P001", "P005", 0.40),  # Leche - Café
+    ("P002", "P003", 0.55),  # Pan - Huevos
+]
+
+for pid, name in _initial_products:
+    try:
+        graph.add_product(Product(pid, name))
+    except ValueError:
+        pass  # Ya existe
+
+for pid_a, pid_b, weight in _initial_relationships:
+    try:
+        prod_a = graph.get_product(pid_a)
+        prod_b = graph.get_product(pid_b)
+        if prod_a and prod_b:
+            graph.add_relationship(Relationship(prod_a, prod_b, weight))
+    except ValueError:
+        pass  # Ya existe o error de validación
 
 
 @app.route('/products', methods=['GET'])
@@ -28,7 +87,7 @@ def get_product(product_id):
 
 @app.route('/products', methods=['POST'])
 def add_product():
-    """Add a new product"""
+    """Add a new product - auto-generates ID if not provided"""
     data = request.get_json()
 
     if not data:
@@ -37,13 +96,30 @@ def add_product():
     product_id = data.get('id')
     name = data.get('name')
 
-    if not product_id or not name:
-        return jsonify({"error": "Missing 'id' or 'name' field"}), 400
+    if not name:
+        return jsonify({"error": "Missing 'name' field"}), 400
+
+    # Auto-generate ID if not provided (format: P001, P002, ...)
+    if not product_id:
+        existing_products = graph.get_products()
+        max_num = 0
+        for p in existing_products:
+            if p.product_id.startswith('P'):
+                try:
+                    num = int(p.product_id[1:])
+                    if num > max_num:
+                        max_num = num
+                except ValueError:
+                    pass
+        product_id = f"P{max_num + 1:03d}"
 
     try:
         product = Product(product_id, name)
         graph.add_product(product)
-        return jsonify({"message": f"Product {product_id} added successfully"}), 201
+        return jsonify({
+            "message": f"Product {product_id} added successfully",
+            "product": {"id": product_id, "name": name}
+        }), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 409  # Conflict - duplicate
     except TypeError as e:
