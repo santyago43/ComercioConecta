@@ -15,6 +15,7 @@ Endpoints:
 - GET /graph/info -> general info about the graph (node/edge counts)
 - GET /explore/bfs/<product_id>?depth=<int> -> BFS traversal from product_id up to given depth
 - GET /explore/dfs/<product_id>?depth=<int> -> DFS traversal from product_id up to given depth
+- GET /explore/reachability/<product_id>?depth=<int> -> reachability summary (reachable vs unreachable products)
 - GET /components -> list connected components in the graph
 
 Error handling returns appropriate HTTP status codes and JSON error messages.
@@ -195,7 +196,11 @@ def get_graph_info():
 
 @app.route('/explore/bfs/<product_id>', methods=['GET'])
 def explore_bfs(product_id):
-    """Explore products using BFS from a starting product"""
+    """Explore products using BFS from a starting product.
+    BFS is the primary algorithm for finding related products because it finds
+    the shortest path first, ideal for identifying directly related products
+    (distance 1) and products related via an intermediary (distance 2).
+    """
     try:
         depth = request.args.get('depth', 2, type=int)
         if depth < 1:
@@ -206,15 +211,19 @@ def explore_bfs(product_id):
         return jsonify({
             "start_product": product_id,
             "max_depth": depth,
+            "algorithm": "bfs",
             "results_count": len(results),
             "results": [
                 {
-                    "product_id": p.product_id,
-                    "product_name": p.name,
-                    "distance": distance,
-                    "cumulative_weight": weight
+                    "product_id": r["product"].product_id,
+                    "product_name": r["product"].name,
+                    "distance": r["distance"],
+                    "cumulative_weight": r["cumulative_weight"],
+                    "path": [p.product_id for p in r["path"]],
+                    "nivel_relacion": r["nivel_relacion"],
+                    "alcanzable": r["alcanzable"],
                 }
-                for p, distance, weight in results
+                for r in results
             ]
         }), 200
     except ValueError as e:
@@ -225,7 +234,11 @@ def explore_bfs(product_id):
 
 @app.route('/explore/dfs/<product_id>', methods=['GET'])
 def explore_dfs(product_id):
-    """Explore products using DFS from a starting product"""
+    """Explore products using DFS from a starting product.
+    DFS explores a chain as far as possible before backtracking.
+    Useful for discovering long influence chains (shelf placement strategy),
+    not the primary algorithm for immediate combo recommendations.
+    """
     try:
         depth = request.args.get('depth', 2, type=int)
         if depth < 1:
@@ -236,16 +249,52 @@ def explore_dfs(product_id):
         return jsonify({
             "start_product": product_id,
             "max_depth": depth,
+            "algorithm": "dfs",
             "results_count": len(results),
             "results": [
                 {
-                    "product_id": p.product_id,
-                    "product_name": p.name,
-                    "distance": distance,
-                    "cumulative_weight": weight
+                    "product_id": r["product"].product_id,
+                    "product_name": r["product"].name,
+                    "distance": r["distance"],
+                    "cumulative_weight": r["cumulative_weight"],
+                    "path": [p.product_id for p in r["path"]],
+                    "nivel_relacion": r["nivel_relacion"],
+                    "alcanzable": r["alcanzable"],
                 }
-                for p, distance, weight in results
+                for r in results
             ]
+        }), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/explore/reachability/<product_id>', methods=['GET'])
+def explore_reachability(product_id):
+    """Get reachability summary from a starting product.
+    Returns which products are reachable within max_depth and which are not,
+    including whether unreachable products are in another component or just
+    beyond the depth limit. Useful for visualizing connected vs disconnected
+    products in a 2D graph view.
+    """
+    try:
+        depth = request.args.get('depth', 2, type=int)
+        if depth < 1:
+            return jsonify({"error": "Depth must be at least 1"}), 400
+
+        summary = graph.get_reachability_summary(product_id, depth)
+
+        return jsonify({
+            "start_product_id": summary["start_product_id"],
+            "start_product_name": summary["start_product_name"],
+            "max_depth": summary["max_depth"],
+            "total_products": summary["total_products"],
+            "reachable_count": summary["reachable_count"],
+            "unreachable_count": summary["unreachable_count"],
+            "component_ids": summary["component_ids"],
+            "reachable": summary["reachable"],
+            "unreachable": summary["unreachable"],
         }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 404

@@ -1,8 +1,11 @@
-# ComercioConecta - Feature 1: Red comercial inicial
+# ComercioConecta - Feature 1 y Feature 2
 
 ## Descripción del proyecto
 
-ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué productos se compran juntos para proponer combinaciones comerciales razonables. Esta implementación corresponde a la **Feature 1: Red comercial inicial**, que permite crear y listar productos y relaciones, rechazando duplicados y datos inválidos, y mostrando la red mediante una API REST y una interfaz frontend.
+ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué productos se compran juntos para proponer combinaciones comerciales razonables.
+
+- **Feature 1: Red comercial inicial** — permite crear y listar productos y relaciones, rechazando duplicados y datos inválidos, y mostrando la red mediante una API REST y una interfaz frontend.
+- **Feature 2: Exploración de relaciones** — permite consultar productos alcanzables desde un producto de interés mediante recorrido BFS/DFS con límite de profundidad, distinguir grupos desconectados (componentes conexos), y visualizar en 2D cómo se relacionan los productos y cuáles están aislados.
 
 ## Características implementadas
 
@@ -17,8 +20,9 @@ ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué
   - `GET /relationships` - Listar todas las relaciones
   - `POST /relationships` - Agregar nueva relación
   - `GET /graph/info` - Obtener información completa del grafo
-  - `GET /explore/bfs/<id>?depth=N` - Exploración en amplitud (BFS)
-  - `GET /explore/dfs/<id>?depth=N` - Exploración en profundidad (DFS)
+  - `GET /explore/bfs/<id>?depth=N` - Exploración en amplitud (BFS) con path, nivel_relacion y alcanzable
+  - `GET /explore/dfs/<id>?depth=N` - Exploración en profundidad (DFS) con path completo
+  - `GET /explore/reachability/<id>?depth=N` - Resumen de alcanzables vs no alcanzables (componentes conexos)
   - `GET /components` - Obtener componentes conexos del grafo
 - **Datos de prueba (seed data)**: 8 productos y 8 relaciones precargados al iniciar
 
@@ -27,7 +31,7 @@ ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué
 - **Pestañas**:
   - 📦 **Productos**: Catálogo con ID y nombre, agregar productos (solo nombre, ID auto)
   - 🔗 **Relaciones**: Tabla con "ID - Nombre" en ambas columnas, pesos como %, agregar con dropdowns
-  - 🔍 **Exploración**: BFS/DFS con selector "ID - Nombre", peso acumulado como %
+  - 🔍 **Exploración**: BFS/DFS con selector "ID - Nombre", peso acumulado como %, nivel de relación, path, y **visualización 2D** que muestra productos alcanzables (anillos concéntricos) y productos desconectados (área aparte, gris)
   - 📊 **Componentes**: Grupos de productos interconectados con detalle expandible
 - **Carga automática**: Datos se cargan al abrir la app (sin botón de refresh)
 - **Validaciones locales con detalle**:
@@ -36,9 +40,10 @@ ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué
 
 ### Algoritmos de grafo propios
 - **Grafo no dirigido**: Las relaciones "se compran juntos" son simétricas
-- **BFS (Breadth-First Search)**: Exploración por niveles con peso acumulado
-- **DFS (Depth-First Search)**: Exploración en profundidad evitando ciclos
+- **BFS (Breadth-First Search)**: Exploración por niveles con peso acumulado, camino más corto primero. Algoritmo primario para recomendación de combos.
+- **DFS (Depth-First Search)**: Exploración en profundidad evitando ciclos, útil para cadenas largas de influencia (placement)
 - **Componentes conexos**: Identifica grupos de productos aislados entre sí
+- **Reachability**: Resumen de productos alcanzables vs no alcanzables desde un producto de origen, con motivo de no alcanzabilidad (fuera de alcance o otro componente)
 - **Validaciones**:
   - Productos únicos por nombre (case-insensitive)
   - Relaciones no duplicadas (en ninguna dirección A-B = B-A)
@@ -64,6 +69,12 @@ ComercioConecta es una aplicación que ayuda a tiendas de barrio a entender qué
   - Profundidad 2: Relaciones vía un intermediario (útiles para recomendaciones de combos)
   - Profundidad > 2: Tiende a generar recomendaciones poco relevantes o demasiado amplias
 - **Peso acumulado multiplicativo**: Representa aproximación de probabilidad conjunta en cadena de compras
+- **Nivel de relación**: Se clasifica como "directo" (dist 1), "indirecto" (dist 2) o "lejano" (dist > 2) para explicar al usuario la fuerza comercial de cada sugerencia
+
+### Visualización 2D
+- **Layout circular concéntrico**: Producto de interés en el centro, productos a distancia 1 en anillo interior, productos a distancia 2+ en anillo exterior, productos desconectados en área aparte (gris)
+- **Aristas**: Grosor y color según el peso de la relación (verde fuerte → rojo débil)
+- **Propósito**: Permite al encargado de ventas ver visualmente qué productos están relacionados con uno de interés y cuáles están en grupos desconectados (sin relación demostrable)
 
 ## Requisitos del sistema
 
@@ -101,25 +112,50 @@ pip install -r requirements.txt
 
 ## Pruebas de aceptación
 
+### Feature 1
 Ejecutar el script de pruebas contra la API local:
 ```bash
-.\.venv\Scripts\python.exe acceptance_test.py --start
+.\.venv\Scripts\python.exe acceptance_test.py
 ```
-El script iniciará la API automáticamente, ejecutará las pruebas y guardará los resultados en `acceptance_output.txt`.
+
+### Feature 2
+Ejecutar el script de pruebas de aceptación para la Feature 2:
+```bash
+.\.venv\Scripts\python.exe acceptance_test_feature2.py
+```
+El script cubre los siguientes escenarios:
+- Normal: BFS/DFS desde producto con conexiones (verifica reachable, distancia, peso acumulado, path, nivel_relacion)
+- Grafo vacío: sin productos, comportamiento correcto sin errores
+- Producto inexistente: 404 en BFS, DFS y reachability
+- Producto aislado: resultados vacíos (no inventa recomendaciones)
+- Ruta inexistente: profundidad insuficiente para alcanzar un nodo
+- Datos inválidos: profundidad 0 o negativa → 400
+- Componentes conexos: al menos un grupo mostrado; productos aislados en su propio componente
+- Reachability: alcanzables vs no alcanzables con razón de no alcanzabilidad
 
 ## Estructura del proyecto
 
 ```
 comercioconecta/
-├── api.py                 # API REST con Flask
-├── graph.py               # Implementación del grafo y algoritmos
-├── models.py              # Clases Product y Relationship
-├── requirements.txt       # Dependencias del proyecto
-├── acceptance_test.py     # Script de pruebas de aceptación
-├── iniciar.bat            # Script para lanzamiento doble (API + Frontend)
+├── api.py                         # API REST con Flask
+├── graph.py                       # Implementación del grafo y algoritmos (BFS, DFS, componentes, reachability)
+├── models.py                      # Clases Product y Relationship
+├── requirements.txt               # Dependencias del proyecto
+├── acceptance_test.py             # Script de pruebas de aceptación (Feature 1)
+├── acceptance_test_feature2.py    # Script de pruebas de aceptación (Feature 2)
+├── start.bat                      # Script para lanzamiento doble (API + Frontend)
 ├── frontend/
-│   └── app.py             # Interfaz Streamlit
-└── README.md              # Este archivo
+│   ├── app.py                     # Interfaz Streamlit principal
+│   ├── components/
+│   │   ├── sidebar.py             # Panel de control lateral
+│   │   ├── product_tab.py         # Pestaña de productos
+│   │   ├── relationship_tab.py    # Pestaña de relaciones
+│   │   ├── exploration_tab.py     # Pestaña de exploración con visualización 2D
+│   │   └── component_tab.py       # Pestaña de componentes conexos
+│   └── utils/
+│       └── helpers.py             # Utilidades de API y sesión
+├── README.md                      # Este archivo
+└── BITACORA_IA.md                 # Registro de decisiones de IA
 ```
 
 ## Endpoints de la API
@@ -143,6 +179,7 @@ POST   /relationships {"product_a": "<string>", "product_b": "<string>", "weight
 GET    /graph/info
 GET    /explore/bfs/<id>?depth=<int>
 GET    /explore/dfs/<id>?depth=<int>
+GET    /explore/reachability/<id>?depth=<int>
 GET    /components
 ```
 
