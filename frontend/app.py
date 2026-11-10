@@ -18,6 +18,7 @@ from frontend.components.product_tab import render_product_tab
 from frontend.components.relationship_tab import render_relationship_tab
 from frontend.components.exploration_tab import render_exploration_tab
 from frontend.components.component_tab import render_component_tab
+from frontend.components.how_it_works_tab import render_how_it_works_tab
 from frontend.theme import apply_theme
 from frontend.utils.helpers import initialize_session_state, load_data
 
@@ -26,6 +27,7 @@ PAGES = {
     "grupos": render_component_tab,
     "productos": render_product_tab,
     "relaciones": render_relationship_tab,
+    "ayuda": render_how_it_works_tab,
 }
 
 

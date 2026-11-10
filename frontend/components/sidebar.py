@@ -15,6 +15,9 @@ NAVIGATION = (
         ("productos", "Productos", ":material/inventory_2:"),
         ("relaciones", "Relaciones", ":material/link:"),
     )),
+    ("Ayuda", (
+        ("ayuda", "Cómo funciona", ":material/help:"),
+    )),
 )
 
 

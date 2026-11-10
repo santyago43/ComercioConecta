@@ -1,7 +1,23 @@
 """
 Componente de pestaña de exploración para el frontend de ComercioConecta
 """
+from html import escape
+
 import streamlit as st
+
+from frontend.utils import ui
+from frontend.utils.helpers import api_request, format_pct
+
+DEPTH_LABELS = {
+    1: "Solo relaciones directas",
+    2: "Hasta 2 pasos (recomendado)",
+    3: "Hasta 3 pasos",
+    4: "Hasta 4 pasos: cadenas largas",
+}
+UNREACHABLE_TAGS = {
+    "otro_componente": "Otro grupo: sin relación demostrable",
+    "fuera_del_alcance": "Mismo grupo, más allá de la profundidad",
+}
 
 
 def render_exploration_tab():
@@ -71,283 +87,94 @@ def render_exploration_tab():
                                 if r['product_a'] == selected_product_id or r['product_b'] == selected_product_id)
                 st.info(f"📦 **{selected_product['name']}** tiene {direct_rels} relaciones directas")
 
-        # Depth selection with better explanation
-        st.markdown("### 📏 Profundidad de exploración")
-        depth_col1, depth_col2 = st.columns([2, 1])
-
-        with depth_col1:
-            depth = st.slider("Número máximo de pasos:", min_value=1, max_value=4, value=2,
-                             help="¿Hasta qué nivel de separación quiere explorar?")
-
-        with depth_col2:
-            # Visual explanation of depth
-            depth_explanations = {
-                1: "Solo relaciones directas\n(amigos inmediatos)",
-                2: "Hasta 2 pasos\n(amigos de amigos)",
-                3: "Hasta 3 pasos\n(amigos de amigos de amigos)",
-                4: "Hasta 4 pasos\n(cadenas largas)"
-            }
-            st.info(f"**Profundidad {depth}**\n{depth_explanations.get(depth, '')}")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            if st.button("🔍 Explorar con BFS", disabled=not selected_product_id, use_container_width=True):
-                if selected_product_id:
-                    with st.spinner("Explorando relaciones en amplitud..."):
-                        # Import here to avoid circular imports
-                        from frontend.utils.helpers import api_request
-                        data, error = api_request("GET", f"/explore/bfs/{selected_product_id}?depth={depth}")
-                        if error:
-                            st.error(f"Error en BFS: {error}")
-                        else:
-                            st.session_state.exploration_results['bfs'] = data
-                            st.rerun()
-
-        with col2:
-            if st.button("🔍 Explorar con DFS", disabled=not selected_product_id, use_container_width=True):
-                if selected_product_id:
-                    with st.spinner("Explorando relaciones en profundidad..."):
-                        # Import here to avoid circular imports
-                        from frontend.utils.helpers import api_request
-                        data, error = api_request("GET", f"/explore/dfs/{selected_product_id}?depth={depth}")
-                        if error:
-                            st.error(f"Error en DFS: {error}")
-                        else:
-                            st.session_state.exploration_results['dfs'] = data
-                            st.rerun()
-
-        with col3:
-            if st.button("🎯 Ver Alcanzabilidad", disabled=not selected_product_id, use_container_width=True):
-                if selected_product_id:
-                    with st.spinner("Analizando alcanzabilidad..."):
-                        from frontend.utils.helpers import api_request
-                        data, error = api_request("GET", f"/explore/reachability/{selected_product_id}?depth={depth}")
-                        if error:
-                            st.error(f"Error en Alcanzabilidad: {error}")
-                        else:
-                            st.session_state.exploration_results['reachability'] = data
-                            st.rerun()
-
-        # Display BFS results with enhanced visualization
-        if 'bfs' in st.session_state.exploration_results:
-            st.subheader("📊 Resultados BFS (Exploración por niveles)")
-            bfs_data = st.session_state.exploration_results['bfs']
-
-            if bfs_data.get("results_count", 0) > 0:
-                bfs_results = []
-                for result in bfs_data["results"]:
-                    # Add visual indicator based on weight
-                    weight_pct = result['cumulative_weight'] * 100
-                    if weight_pct >= 70:
-                        strength_icon = "🟢"
-                        strength_text = "Fuerte"
-                    elif weight_pct >= 40:
-                        strength_icon = "🟡"
-                        strength_text = "Moderada"
-                    else:
-                        strength_icon = "🔴"
-                        strength_text = "Débil"
-
-                    bfs_results.append({
-                        "Distancia": f"{result['distance']} paso{'s' if result['distance'] > 1 else ''}",
-                        "Producto": f"{result['product_name']} ({result['product_id']})",
-                        "Peso Acumulado": f"{weight_pct:.1f}%",
-                        "Fuerza": f"{strength_icon} {strength_text}",
-                        "Relevancia": "★" * min(5, int(weight_pct / 20))  # Visual relevance indicator
-                    })
-
-                if bfs_results:
-                    html = '<table style="width:100%; border-collapse: collapse; margin: 1rem 0;">'
-                    html += '<thead><tr>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Distancia</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Producto</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Peso Acumulado</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Fuerza</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Relevancia</th>'
-                    html += '</tr></thead><tbody>'
-                    for result in bfs_results:
-                        html += '<tr>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Distancia"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Producto"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Peso Acumulado"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Fuerza"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Relevancia"]}</td>'
-                        html += '</tr>'
-                    html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
-
-                # Highlight most relevant result
-                if bfs_results:
-                    best_result = max(bfs_results, key=lambda x: float(x['Peso Acumulado'].rstrip('%')))
-                    st.success(f"🎯 **Resultado más relevante:** {best_result['Producto']} ({best_result['Peso Acumulado']})")
-
-                st.caption(f"Mostrando {bfs_data['results_count']} resultados desde {bfs_data['start_product']} (profundidad máxima: {bfs_data['max_depth']})")
-            else:
-                st.info("🔍 No se encontraron productos relacionados con los criterios especificados.")
-                st.suggestion = st.button("💡 Sugerencia: Intente aumentar la profundidad o seleccionar otro producto")
-
-        # Display DFS results with enhanced visualization
-        if 'dfs' in st.session_state.exploration_results:
-            st.subheader("📊 Resultados DFS (Exploración en profundidad)")
-            dfs_data = st.session_state.exploration_results['dfs']
-
-            if dfs_data.get("results_count", 0) > 0:
-                dfs_results = []
-                for result in dfs_data["results"]:
-                    # Add visual indicator based on weight
-                    weight_pct = result['cumulative_weight'] * 100
-                    if weight_pct >= 70:
-                        strength_icon = "🟢"
-                        strength_text = "Fuerte"
-                    elif weight_pct >= 40:
-                        strength_icon = "🟡"
-                        strength_text = "Moderada"
-                    else:
-                        strength_icon = "🔴"
-                        strength_text = "Débil"
-
-                    dfs_results.append({
-                        "Distancia": f"{result['distance']} paso{'s' if result['distance'] > 1 else ''}",
-                        "Producto": f"{result['product_name']} ({result['product_id']})",
-                        "Peso Acumulado": f"{weight_pct:.1f}%",
-                        "Fuerza": f"{strength_icon} {strength_text}",
-                        "Relevancia": "★" * min(5, int(weight_pct / 20))  # Visual relevance indicator
-                    })
-
-                if dfs_results:
-                    html = '<table style="width:100%; border-collapse: collapse; margin: 1rem 0;">'
-                    html += '<thead><tr>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Distancia</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Producto</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Peso Acumulado</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Fuerza</th>'
-                    html += '<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">Relevancia</th>'
-                    html += '</tr></thead><tbody>'
-                    for result in dfs_results:
-                        html += '<tr>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Distancia"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Producto"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Peso Acumulado"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Fuerza"]}</td>'
-                        html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{result["Relevancia"]}</td>'
-                        html += '</tr>'
-                    html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
-
-                # Highlight most relevant result
-                if dfs_results:
-                    best_result = max(dfs_results, key=lambda x: float(x['Peso Acumulado'].rstrip('%')))
-                    st.success(f"🎯 **Resultado más relevante:** {best_result['Producto']} ({best_result['Peso Acumulado']})")
-
-                st.caption(f"Mostrando {dfs_data['results_count']} resultados desde {dfs_data['start_product']} (profundidad máxima: {dfs_data['max_depth']})")
-            else:
-                st.info("🔍 No se encontraron productos relacionados con los criterios especificados.")
-
-        # Display Reachability results
-        if 'reachability' in st.session_state.exploration_results:
-            st.subheader("🎯 Alcanzabilidad Completa (Resumen de Componentes)")
-            reach_data = st.session_state.exploration_results['reachability']
-
-            # Summary metrics
-            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
-            with col_r1:
-                st.metric("✅ Alcanzables", reach_data.get("reachable_count", 0))
-            with col_r2:
-                st.metric("❌ No Alcanzables", reach_data.get("unreachable_count", 0))
-            with col_r3:
-                other_comp = sum(1 for u in reach_data.get("unreachable", []) if u.get("reason") == "otro_componente")
-                st.metric("🔗 Otro Componente", other_comp)
-            with col_r4:
-                beyond_depth = sum(1 for u in reach_data.get("unreachable", []) if u.get("reason") == "fuera_del_alcance")
-                st.metric("📏 Fuera de Alcance", beyond_depth)
-
-            st.caption(f"Producto: {reach_data.get('start_product_name')} ({reach_data.get('start_product_id')}) | Profundidad: {reach_data.get('max_depth')} | Total productos: {reach_data.get('total_products')}")
-
-            # Reachable products table
-            reachable = reach_data.get("reachable", [])
-            if reachable:
-                st.markdown("#### ✅ Productos Alcanzables")
-                reachable_rows = []
-                for r in reachable:
-                    weight_pct = r['cumulative_weight'] * 100
-                    if weight_pct >= 70:
-                        strength_icon = "🟢"
-                        strength_text = "Fuerte"
-                    elif weight_pct >= 40:
-                        strength_icon = "🟡"
-                        strength_text = "Moderada"
-                    else:
-                        strength_icon = "🔴"
-                        strength_text = "Débil"
-
-                    reachable_rows.append({
-                        "Distancia": f"{r['distance']} paso{'s' if r['distance'] > 1 else ''}",
-                        "Producto": f"{r['product_name']} ({r['product_id']})",
-                        "Peso Acumulado": f"{weight_pct:.1f}%",
-                        "Fuerza": f"{strength_icon} {strength_text}",
-                        "Nivel": r['nivel_relacion'].capitalize(),
-                        "Path": " → ".join(r['path']),
-                    })
-
-                if reachable_rows:
-                    html = '<table style="width:100%; border-collapse: collapse; margin: 1rem 0;">'
-                    html += '<thead><tr>'
-                    for col in ["Distancia", "Producto", "Peso Acumulado", "Fuerza", "Nivel", "Path"]:
-                        html += f'<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">{col}</th>'
-                    html += '</tr></thead><tbody>'
-                    for row in reachable_rows:
-                        html += '<tr>'
-                        for col in ["Distancia", "Producto", "Peso Acumulado", "Fuerza", "Nivel", "Path"]:
-                            html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{row[col]}</td>'
-                        html += '</tr>'
-                    html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
-
-            # Unreachable products table
-            unreachable = reach_data.get("unreachable", [])
-            if unreachable:
-                st.markdown("#### ❌ Productos No Alcanzables")
-                unreachable_rows = []
-                for r in unreachable:
-                    reason = r.get('reason', 'desconocido')
-                    if reason == "otro_componente":
-                        reason_badge = "🔴 **Otro Componente**"
-                        reason_help = "Producto en componente desconectado (sin relación demostrable)"
-                    elif reason == "fuera_del_alcance":
-                        reason_badge = "🟡 **Fuera de Alcance**"
-                        reason_help = "Producto en mismo componente pero más allá de la profundidad máxima"
-                    else:
-                        reason_badge = f"⚪ {reason}"
-                        reason_help = ""
-
-                    unreachable_rows.append({
-                        "Producto": f"{r['product_name']} ({r['product_id']})",
-                        "Razón": reason_badge,
-                        "Detalle": reason_help,
-                    })
-
-                if unreachable_rows:
-                    html = '<table style="width:100%; border-collapse: collapse; margin: 1rem 0;">'
-                    html += '<thead><tr>'
-                    for col in ["Producto", "Razón", "Detalle"]:
-                        html += f'<th style="text-align: left; padding: 8px; border-bottom: 2px solid #ddd;">{col}</th>'
-                    html += '</tr></thead><tbody>'
-                    for row in unreachable_rows:
-                        html += '<tr>'
-                        for col in ["Producto", "Razón", "Detalle"]:
-                            html += f'<td style="padding: 8px; border-bottom: 1px solid #eee;">{row[col]}</td>'
-                        html += '</tr>'
-                    html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
-
-            # Business insight
-            st.info("""
-            **💡 Interpretación para el negocio:**
-            - **Alcanzables**: Productos con relación demostrable dentro de la profundidad (candidatos a combos/recomendación)
-            - **Otro Componente**: Productos en grupos desconectados — *no inventar recomendaciones*, son oportunidades para crear nuevas relaciones
-            - **Fuera de Alcance**: Productos conectados pero lejanos — relación débil, baja relevancia comercial
-            """)
+        _render_advanced_analysis(selected_product_id)
     else:
         st.info("📦 No hay productos disponibles para explorar. Agregue algunos productos primero.")
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+def _render_advanced_analysis(product_id):
+    depth_col, help_col = st.columns([3, 2])
+    with depth_col:
+        depth = st.slider("Número máximo de pasos", min_value=1, max_value=4, value=2)
+    with help_col:
+        ui.render(f'<div class="cc-specs">{ui.tag(DEPTH_LABELS[depth])}</div>')
+
+    results = st.session_state.exploration_results
+    actions = (("bfs", "Explorar con BFS"), ("dfs", "Explorar con DFS"), ("reachability", "Ver alcanzabilidad"))
+    for column, (name, label) in zip(st.columns(3), actions):
+        with column:
+            if st.button(label, key=f"run_{name}", width="stretch"):
+                data, error = api_request("GET", f"/explore/{name}/{product_id}?depth={depth}")
+                if error:
+                    st.error(f"Error: {error}")
+                else:
+                    results[name] = data
+
+    # Solo se muestran resultados del producto elegido, no los de una consulta anterior
+    for name, title in (("bfs", "BFS: exploración por niveles"), ("dfs", "DFS: exploración en profundidad")):
+        data = results.get(name)
+        if data and data["start_product"] == product_id:
+            _render_traversal(title, data)
+
+    reachability = results.get("reachability")
+    if reachability and reachability["start_product_id"] == product_id:
+        _render_reachability(reachability)
+
+
+def _path_label(path):
+    names = {p['id']: p['name'] for p in st.session_state.get('products', [])}
+    return escape(" → ".join(names.get(product_id, product_id) for product_id in path))
+
+
+def _traversal_table(items):
+    return ui.table(
+        [("Pasos", True), ("Producto", False), ("Peso acumulado", True), ("", False),
+         ("Fuerza", False), ("Nivel", False), ("Camino", False)],
+        [
+            [
+                item["distance"],
+                f"<strong>{escape(item['product_name'])}</strong> {ui.product_id(item['product_id'])}",
+                format_pct(item["cumulative_weight"]),
+                ui.meter(item["cumulative_weight"]),
+                ui.strength(item["cumulative_weight"]),
+                escape(item["nivel_relacion"].capitalize()),
+                _path_label(item["path"]),
+            ]
+            for item in items
+        ],
+    )
+
+
+def _render_traversal(title, data):
+    note = f"{data['results_count']} resultados · profundidad máxima {data['max_depth']}"
+    if data["algorithm"] == "dfs":
+        note += " · DFS muestra un producto una vez por cada camino"
+    ui.section(title, note)
+
+    if data["results_count"] == 0:
+        ui.empty_state("Sin resultados", "No se encontraron productos relacionados con esta profundidad.")
+        return
+    ui.render(_traversal_table(data["results"]))
+
+
+def _render_reachability(data):
+    ui.section("Alcanzabilidad", f"Desde {data['start_product_name']} · profundidad máxima {data['max_depth']}")
+    unreachable = data["unreachable"]
+    ui.stats([
+        (data["reachable_count"], "Alcanzables"),
+        (sum(u["reason"] == "otro_componente" for u in unreachable), "En otro grupo"),
+        (sum(u["reason"] == "fuera_del_alcance" for u in unreachable), "Fuera de alcance"),
+    ])
+
+    if data["reachable"]:
+        ui.render(_traversal_table(data["reachable"]))
+    if unreachable:
+        ui.render(ui.table(
+            [("Producto", False), ("Motivo", False)],
+            [
+                [f"<strong>{escape(u['product_name'])}</strong> {ui.product_id(u['product_id'])}",
+                 escape(UNREACHABLE_TAGS[u["reason"]])]
+                for u in unreachable
+            ],
+        ))
