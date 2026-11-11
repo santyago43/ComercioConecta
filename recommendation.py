@@ -136,6 +136,48 @@ def _rule_summary(rule: RecommendationRule) -> dict:
     }
 
 
+def _filter_by_strength(
+    direct: list[Candidate], indirect: list[Candidate], rule: RecommendationRule
+) -> tuple[list[Candidate], list[dict]]:
+    """Separa los candidatos que alcanzan su fuerza mínima (directas primero) de los descartados."""
+    accepted, excluded = [], []
+    for candidates, minimum, code in (
+        (direct, rule.min_direct, "directa_debil"),
+        (indirect, rule.min_indirect, "indirecta_debil"),
+    ):
+        for candidate in candidates:
+            if candidate.strength >= minimum:
+                accepted.append(candidate)
+            else:
+                excluded.append(_excluded(candidate.product, code, _weak_reason(candidate, minimum)))
+    return accepted, excluded
+
+
+def _over_limit_exclusions(accepted: list[Candidate], rule: RecommendationRule) -> list[dict]:
+    """Los aceptados que no caben en el máximo de productos."""
+    return [
+        _excluded(
+            candidate.product,
+            "fuera_del_limite",
+            f"{candidate.reason} Quedó por fuera del máximo de {rule.limit} productos.",
+        )
+        for candidate in accepted[rule.limit:]
+    ]
+
+
+def _unreachable_exclusions(graph: CommercialGraph, product_id: str) -> list[dict]:
+    """Reutiliza la alcanzabilidad de Feature 2 para explicar lo que no tiene camino corto."""
+    return [
+        {
+            "product_id": item["product_id"],
+            "product_name": item["product_name"],
+            "reason_code": item["reason"],
+            "reason": REACHABILITY_REASONS[item["reason"]],
+        }
+        for item in graph.get_reachability_summary(product_id, MAX_STEPS)["unreachable"]
+    ]
+
+
 def recommend(
     graph: CommercialGraph,
     product_id: str,
@@ -149,32 +191,9 @@ def recommend(
     direct = _direct_candidates(graph, origin)
     indirect = _indirect_candidates(graph, origin)
 
-    accepted, excluded = [], []
-    for candidates, minimum, code in (
-        (direct, rule.min_direct, "directa_debil"),
-        (indirect, rule.min_indirect, "indirecta_debil"),
-    ):
-        for candidate in candidates:
-            if candidate.strength >= minimum:
-                accepted.append(candidate)
-            else:
-                excluded.append(_excluded(candidate.product, code, _weak_reason(candidate, minimum)))
-
-    for candidate in accepted[rule.limit:]:
-        excluded.append(_excluded(
-            candidate.product,
-            "fuera_del_limite",
-            f"{candidate.reason} Quedó por fuera del máximo de {rule.limit} productos.",
-        ))
-
-    # Reutiliza la alcanzabilidad de Feature 2 para explicar lo que no tiene camino corto
-    for item in graph.get_reachability_summary(product_id, MAX_STEPS)["unreachable"]:
-        excluded.append({
-            "product_id": item["product_id"],
-            "product_name": item["product_name"],
-            "reason_code": item["reason"],
-            "reason": REACHABILITY_REASONS[item["reason"]],
-        })
+    accepted, excluded = _filter_by_strength(direct, indirect, rule)
+    excluded += _over_limit_exclusions(accepted, rule)
+    excluded += _unreachable_exclusions(graph, product_id)
 
     proposals = [_proposal(rank, c) for rank, c in enumerate(accepted[:rule.limit], start=1)]
 

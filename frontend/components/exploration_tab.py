@@ -138,7 +138,16 @@ def _unrelated_note(data):
 
 
 def _render_technical_detail(data):
-    rule = data["rule"]
+    _render_rule_specs(data["rule"])
+    if data["proposals"]:
+        _render_proposals_table(data["proposals"])
+    if data["direct_connections"]:
+        _render_connections_table(data["direct_connections"])
+    if data["excluded"]:
+        _render_excluded_table(data["excluded"])
+
+
+def _render_rule_specs(rule):
     specs = (
         ("Alcance", f"{rule['max_steps']} pasos"),
         ("Directa", f"≥ {format_pct(rule['min_direct'])}"),
@@ -148,48 +157,51 @@ def _render_technical_detail(data):
     items = "".join(f'<span class="cc-spec">{name} <strong>{value}</strong></span>' for name, value in specs)
     ui.render(f'<div class="cc-specs cc-specs-start">{items}</div>')
 
-    if data["proposals"]:
-        ui.section("Productos recomendados", "Primero las conexiones directas, luego las indirectas; cada grupo por fuerza")
-        ui.render(ui.table(
-            [("#", True), ("Producto", False), ("Tipo", False), ("Fuerza", True), ("Camino y peso", False), ("Razón", False)],
-            [
-                [
-                    p["rank"],
-                    f"<strong>{escape(p['product_name'])}</strong> {ui.product_id(p['product_id'])}",
-                    escape(p["type"].capitalize()),
-                    format_pct(p["strength"]),
-                    ui.path_chain(p["path_names"], p["path_weights"]),
-                    escape(p["reason"]),
-                ]
-                for p in data["proposals"]
-            ],
-        ))
 
-    if data["direct_connections"]:
-        ui.section("Conexiones directas registradas")
-        ui.render(ui.table(
-            [("Producto", False), ("Co-compra", True), ("", False), ("Fuerza", False)],
+def _render_proposals_table(proposals):
+    ui.section("Productos recomendados", "Primero las conexiones directas, luego las indirectas; cada grupo por fuerza")
+    ui.render(ui.table(
+        [("#", True), ("Producto", False), ("Tipo", False), ("Fuerza", True), ("Camino y peso", False), ("Razón", False)],
+        [
             [
-                [
-                    f"<strong>{escape(c['product_name'])}</strong> {ui.product_id(c['product_id'])}",
-                    format_pct(c["weight"]),
-                    ui.meter(c["weight"]),
-                    ui.strength(c["weight"]),
-                ]
-                for c in data["direct_connections"]
-            ],
-        ))
+                p["rank"],
+                f"<strong>{escape(p['product_name'])}</strong> {ui.product_id(p['product_id'])}",
+                escape(p["type"].capitalize()),
+                format_pct(p["strength"]),
+                ui.path_chain(p["path_names"], p["path_weights"]),
+                escape(p["reason"]),
+            ]
+            for p in proposals
+        ],
+    ))
 
-    if data["excluded"]:
-        ui.section("Productos descartados")
-        ui.render(ui.table(
-            [("Producto", False), ("Motivo", False)],
+
+def _render_connections_table(connections):
+    ui.section("Conexiones directas registradas")
+    ui.render(ui.table(
+        [("Producto", False), ("Co-compra", True), ("", False), ("Fuerza", False)],
+        [
             [
-                [f"<strong>{escape(item['product_name'])}</strong> {ui.product_id(item['product_id'])}",
-                 escape(item["reason"])]
-                for item in data["excluded"]
-            ],
-        ))
+                f"<strong>{escape(c['product_name'])}</strong> {ui.product_id(c['product_id'])}",
+                format_pct(c["weight"]),
+                ui.meter(c["weight"]),
+                ui.strength(c["weight"]),
+            ]
+            for c in connections
+        ],
+    ))
+
+
+def _render_excluded_table(excluded):
+    ui.section("Productos descartados")
+    ui.render(ui.table(
+        [("Producto", False), ("Motivo", False)],
+        [
+            [f"<strong>{escape(item['product_name'])}</strong> {ui.product_id(item['product_id'])}",
+             escape(item["reason"])]
+            for item in excluded
+        ],
+    ))
 
 
 def _render_advanced_analysis(product_id):

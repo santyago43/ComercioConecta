@@ -60,11 +60,7 @@ TECHNICAL_ANALYSIS = """
 """
 
 
-def render_how_it_works_tab():
-    """Renderiza la explicación de la propuesta y los algoritmos"""
-    ui.page_header("Cómo funciona", "Qué hace el sistema para llegar a cada propuesta y qué límites tiene.")
-
-    ui.render("""
+OVERVIEW = """
     <div class="cc-prose">
       <h2>En pocas palabras</h2>
       <p>El sistema mira qué productos se compran juntos. Si el cliente lleva Leche y Leche se compra con Pan, recomienda Pan. Si Pan además se compra con Mantequilla y esa cadena es fuerte, también puede recomendar Mantequilla. Cuando no hay compras que relacionen los productos, no recomienda nada.</p>
@@ -86,11 +82,22 @@ def render_how_it_works_tab():
       <p>Son los componentes conexos del grafo: conjuntos de productos unidos por alguna cadena de relaciones. Dos productos en grupos distintos no tienen relación demostrable, así que nunca se recomiendan entre sí.</p>
 
     </div>
-    """)
+"""
+
+
+def render_how_it_works_tab():
+    """Renderiza la explicación de la propuesta y los algoritmos"""
+    ui.page_header("Cómo funciona", "Qué hace el sistema para llegar a cada propuesta y qué límites tiene.")
+
+    ui.render(OVERVIEW)
 
     with st.expander("Para el análisis técnico", icon=":material/engineering:", expanded=True):
         ui.render(TECHNICAL_ANALYSIS)
 
+    _render_bfs_dfs_comparison()
+
+
+def _render_bfs_dfs_comparison():
     ui.render('<div class="cc-prose"><h2>BFS y DFS</h2></div>')
     ui.render(ui.table(
         [("", False), ("BFS: búsqueda en amplitud", False), ("DFS: búsqueda en profundidad", False)],
