@@ -141,6 +141,31 @@ class CommercialGraph:
         else:
             return "lejano"
 
+    def _require_product(self, product_id: str) -> Product:
+        """Devuelve el producto o lanza ValueError si no existe"""
+        product = self.get_product(product_id)
+        if product is None:
+            raise ValueError(f"Product {product_id} does not exist")
+        return product
+
+    def _traversal_result(self, product: Product, distance: int, cumulative_weight: float,
+                          path: list[Product]) -> dict:
+        """Una fila de resultado de BFS/DFS"""
+        return {
+            "product": product,
+            "distance": distance,
+            "cumulative_weight": cumulative_weight,
+            "path": list(path),
+            "nivel_relacion": self._nivel_relacion(distance),
+            "alcanzable": True,
+        }
+
+    @staticmethod
+    def _sort_results(results: list[dict]) -> list[dict]:
+        """Ordena por distancia (ascendente) y luego por peso acumulado (descendente)"""
+        results.sort(key=lambda x: (x["distance"], -x["cumulative_weight"]))
+        return results
+
     def bfs(self, start_product_id, max_depth=2):
         """
         Breadth-First Search from a starting product.
@@ -149,9 +174,7 @@ class CommercialGraph:
         ideal para identificar productos directamente relacionados (distancia 1)
         y relacionados via intermediario (distancia 2).
         """
-        start_product = self.get_product(start_product_id)
-        if start_product is None:
-            raise ValueError(f"Product {start_product_id} does not exist")
+        start_product = self._require_product(start_product_id)
 
         # Queue for BFS: (product, distance, cumulative_weight, path)
         queue = deque([(start_product, 0, 1.0, [start_product])])
@@ -163,14 +186,7 @@ class CommercialGraph:
 
             # Don't include the starting product in results with distance 0
             if distance > 0:
-                results.append({
-                    "product": current_product,
-                    "distance": distance,
-                    "cumulative_weight": cumulative_weight,
-                    "path": list(path),
-                    "nivel_relacion": self._nivel_relacion(distance),
-                    "alcanzable": True,
-                })
+                results.append(self._traversal_result(current_product, distance, cumulative_weight, path))
 
             # Stop if we've reached max depth
             if distance >= max_depth:
@@ -180,12 +196,9 @@ class CommercialGraph:
             for neighbor, weight in self.graph[current_product].items():
                 if neighbor not in visited:
                     visited.add(neighbor)
-                    new_cumulative_weight = cumulative_weight * weight
-                    queue.append((neighbor, distance + 1, new_cumulative_weight, path + [neighbor]))
+                    queue.append((neighbor, distance + 1, cumulative_weight * weight, path + [neighbor]))
 
-        # Sort by distance (ascending) and then by cumulative weight (descending)
-        results.sort(key=lambda x: (x["distance"], -x["cumulative_weight"]))
-        return results
+        return self._sort_results(results)
 
     def dfs(self, start_product_id, max_depth=2):
         """
@@ -195,9 +208,7 @@ class CommercialGraph:
         Util para descubrir rutas largas de influencia (estrategia de placement),
         no es el algoritmo primario para recomendacion de combos inmediatos.
         """
-        start_product = self.get_product(start_product_id)
-        if start_product is None:
-            raise ValueError(f"Product {start_product_id} does not exist")
+        start_product = self._require_product(start_product_id)
 
         # Stack for DFS: (product, distance, cumulative_weight, path)
         stack = [(start_product, 0, 1.0, [start_product])]
@@ -208,30 +219,18 @@ class CommercialGraph:
 
             # Don't include the starting product in results with distance 0
             if distance > 0:
-                results.append({
-                    "product": current_product,
-                    "distance": distance,
-                    "cumulative_weight": cumulative_weight,
-                    "path": list(path),
-                    "nivel_relacion": self._nivel_relacion(distance),
-                    "alcanzable": True,
-                })
+                results.append(self._traversal_result(current_product, distance, cumulative_weight, path))
 
             # Stop if we've reached max depth
             if distance >= max_depth:
                 continue
 
             # Explore neighbors (in reverse order to maintain consistent ordering)
-            neighbors = list(self.graph[current_product].items())
-            for neighbor, weight in reversed(neighbors):
+            for neighbor, weight in reversed(list(self.graph[current_product].items())):
                 if neighbor not in path:  # Avoid cycles
-                    new_path = path + [neighbor]
-                    new_cumulative_weight = cumulative_weight * weight
-                    stack.append((neighbor, distance + 1, new_cumulative_weight, new_path))
+                    stack.append((neighbor, distance + 1, cumulative_weight * weight, path + [neighbor]))
 
-        # Sort by distance (ascending) and then by cumulative weight (descending)
-        results.sort(key=lambda x: (x["distance"], -x["cumulative_weight"]))
-        return results
+        return self._sort_results(results)
 
     def get_connected_components(self):
         """
@@ -279,20 +278,44 @@ class CommercialGraph:
 
         return None
 
+    @staticmethod
+    def _reachable_details(bfs_results: list[dict]) -> list[dict]:
+        """Resultados de BFS con ids y nombres, ordenados por distancia y peso"""
+        reachable = [
+            {
+                "product_id": r["product"].product_id,
+                "product_name": r["product"].name,
+                "distance": r["distance"],
+                "cumulative_weight": r["cumulative_weight"],
+                "path": [p.product_id for p in r["path"]],
+                "nivel_relacion": r["nivel_relacion"],
+                "alcanzable": r["alcanzable"],
+            }
+            for r in bfs_results
+        ]
+        reachable.sort(key=lambda x: (x["distance"], -x["cumulative_weight"]))
+        return reachable
+
+    def _unreachable_details(self, unreachable_ids: set[str], component_ids: set[str]) -> list[dict]:
+        """No alcanzables con su motivo: mismo grupo primero, luego otros grupos"""
+        unreachable = []
+        for pid in unreachable_ids:
+            in_same_component = pid in component_ids
+            unreachable.append({
+                "product_id": pid,
+                "product_name": self.products[pid].name,
+                "in_same_component": in_same_component,
+                "reason": "fuera_del_alcance" if in_same_component else "otro_componente",
+            })
+        unreachable.sort(key=lambda x: (not x["in_same_component"], x["product_name"]))
+        return unreachable
+
     def get_reachability_summary(self, start_product_id, max_depth=2):
         """
-        Returns a summary of reachability from a starting product.
-        Includes:
-        - reachable: list of products reachable within max_depth (from BFS)
-        - unreachable: list of products NOT reachable (in other components or beyond depth)
-        - component: the connected component of the start product
-        - total_products: total number of products in the graph
-        - reachable_count: count of reachable products
-        - unreachable_count: count of unreachable products
+        Summary of reachability from a starting product: reachable (BFS within max_depth),
+        unreachable (other components or beyond depth), component_ids, total and per-list counts.
         """
-        start_product = self.get_product(start_product_id)
-        if start_product is None:
-            raise ValueError(f"Product {start_product_id} does not exist")
+        start_product = self._require_product(start_product_id)
 
         # Get reachable products via BFS
         reachable_results = self.bfs(start_product_id, max_depth)
@@ -302,43 +325,11 @@ class CommercialGraph:
         component = self.get_component_of_product(start_product_id)
         component_ids = {p.product_id for p in component} if component else set()
 
-        # All products except the start product
-        all_other_ids = {pid for pid in self.products if pid != start_product_id}
+        # Unreachable: other components AND same component but beyond max_depth
+        unreachable_ids = {pid for pid in self.products if pid != start_product_id} - reachable_ids
 
-        # Unreachable: products not reached by BFS within max_depth
-        # Includes products in other components AND products in same component but beyond max_depth
-        unreachable_ids = all_other_ids - reachable_ids
-
-        # Build reachable list with details
-        reachable = []
-        for r in reachable_results:
-            reachable.append({
-                "product_id": r["product"].product_id,
-                "product_name": r["product"].name,
-                "distance": r["distance"],
-                "cumulative_weight": r["cumulative_weight"],
-                "path": [p.product_id for p in r["path"]],
-                "nivel_relacion": r["nivel_relacion"],
-                "alcanzable": r["alcanzable"],
-            })
-
-        # Build unreachable list
-        unreachable = []
-        for pid in unreachable_ids:
-            p = self.products[pid]
-            # Determine if it's in another component or same component but beyond depth
-            in_same_component = pid in component_ids if component else False
-            unreachable.append({
-                "product_id": pid,
-                "product_name": p.name,
-                "in_same_component": in_same_component,
-                "reason": "fuera_del_alcance" if in_same_component else "otro_componente",
-            })
-
-        # Sort reachable by distance then weight
-        reachable.sort(key=lambda x: (x["distance"], -x["cumulative_weight"]))
-        # Sort unreachable: same component first, then other components
-        unreachable.sort(key=lambda x: (not x["in_same_component"], x["product_name"]))
+        reachable = self._reachable_details(reachable_results)
+        unreachable = self._unreachable_details(unreachable_ids, component_ids)
 
         return {
             "start_product_id": start_product_id,

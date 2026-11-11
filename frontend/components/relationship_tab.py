@@ -56,12 +56,8 @@ def _relationship_table(relationships):
     return ui.table([("Productos", False), ("Co-compra", True), ("", False), ("Fuerza", False)], rows)
 
 
-def _render_form(relationships):
-    names = _names()
-    if len(names) < 2:
-        ui.empty_state("Faltan productos", "Necesita al menos dos productos para crear una relación.")
-        return
-
+def _form_fields(names):
+    """Dibuja los campos del formulario y devuelve (producto A, producto B, porcentaje, enviado)"""
     options = list(names)
     label = lambda product_id: f"{names[product_id]} · {product_id}"
 
@@ -70,7 +66,16 @@ def _render_form(relationships):
         product_b = st.selectbox("Producto B", options, index=1, format_func=label, key="rel_b")
         percent = st.slider("Co-compra (%)", min_value=5, max_value=100, value=50, step=5)
         submitted = st.form_submit_button("Agregar relación", type="primary", width="stretch")
+    return product_a, product_b, percent, submitted
 
+
+def _render_form(relationships):
+    names = _names()
+    if len(names) < 2:
+        ui.empty_state("Faltan productos", "Necesita al menos dos productos para crear una relación.")
+        return
+
+    product_a, product_b, percent, submitted = _form_fields(names)
     if not submitted:
         return
 

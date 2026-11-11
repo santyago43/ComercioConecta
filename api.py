@@ -89,6 +89,18 @@ def get_product(product_id):
     return jsonify({"id": product.product_id, "name": product.name}), 200
 
 
+def _next_product_id():
+    """Auto-generate the next ID (format: P001, P002, ...) from the highest existing number"""
+    max_num = 0
+    for p in graph.get_products():
+        if p.product_id.startswith('P'):
+            try:
+                max_num = max(max_num, int(p.product_id[1:]))
+            except ValueError:
+                pass
+    return f"P{max_num + 1:03d}"
+
+
 @app.route('/products', methods=['POST'])
 def add_product():
     """Add a new product - auto-generates ID if not provided"""
@@ -103,19 +115,8 @@ def add_product():
     if not name:
         return jsonify({"error": "Missing 'name' field"}), 400
 
-    # Auto-generate ID if not provided (format: P001, P002, ...)
     if not product_id:
-        existing_products = graph.get_products()
-        max_num = 0
-        for p in existing_products:
-            if p.product_id.startswith('P'):
-                try:
-                    num = int(p.product_id[1:])
-                    if num > max_num:
-                        max_num = num
-                except ValueError:
-                    pass
-        product_id = f"P{max_num + 1:03d}"
+        product_id = _next_product_id()
 
     try:
         product = Product(product_id, name)
