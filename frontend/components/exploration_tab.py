@@ -1,10 +1,12 @@
 """
-Componente de pestaña de exploración para el frontend de ComercioConecta
+Sección principal del encargado de ventas.
+A la vista, la respuesta en lenguaje de tienda; los cálculos quedan en desplegables.
 """
 from html import escape
 
 import streamlit as st
 
+from frontend.components.product_picker import current_product, render_product_picker
 from frontend.utils import ui
 from frontend.utils.helpers import api_request, format_pct
 
@@ -18,79 +20,176 @@ UNREACHABLE_TAGS = {
     "otro_componente": "Otro grupo: sin relación demostrable",
     "fuera_del_alcance": "Mismo grupo, más allá de la profundidad",
 }
+DIRECT = "directa"
+INDIRECT = "indirecta"
 
 
 def render_exploration_tab():
-    """Renderiza la pestaña de exploración"""
-    st.markdown('<div class="tab-content">', unsafe_allow_html=True)
-    st.header("🔍 Exploración de Relaciones")
+    """Renderiza las recomendaciones del producto elegido"""
+    products = st.session_state.get('products', [])
+    if not products:
+        ui.page_header("¿Qué le ofrezco al cliente?", "Elija lo que lleva el cliente y vea qué más le puede ofrecer.")
+        ui.empty_state("Aún no hay productos", "Registre productos y relaciones para recibir recomendaciones.")
+        return
 
-    # Enhanced explanation
-    with st.expander("📖 ¿Qué es BFS y DFS? ¿Cuándo usar cada uno?", expanded=True):
-        col1, col2 = st.columns(2)
+    ui.page_header("¿Qué le ofrezco al cliente?", "Elija lo que lleva el cliente en su tiquete y vea qué más le puede ofrecer.")
+    product_id = current_product(products, st.session_state.get('relationships', []))
 
-        with col1:
-            st.markdown("""
-            ### 🔍 **BFS (Búsqueda en Amplitud)**
-            - **Explora por niveles**: primero productos directos, luego los de 2 pasos, etc.
-            - **Mejor para**: encontrar productos relacionados cercanos
-            - **Ejemplo**: Desde "Leche" encuentra primero "Pan", "Huevos", luego "Mantequilla" (vía Pan)
-            - **Use cuando**: quiera ver qué productos están directamente relacionados o a poca distancia
-            """)
+    # Se consulta en cada render para reflejar de inmediato el producto elegido
+    data, error = api_request("GET", f"/recommendations/{product_id}")
 
-        with col2:
-            st.markdown("""
-            ### 🔍 **DFS (Búsqueda en Profundidad)**
-            - **Explora una cadena lo más lejos posible** antes de retroceder
-            - **Mejor para**: descubrir rutas largas de influencia
-            - **Ejemplo**: Desde "Leche" podría ir Leche→Pan→Mantequilla→Huevos (si esas relaciones existen)
-            - **Use cuando**: quiera ver cadenas largas de dependencia o influencia
-            """)
+    # Feature 4: la columna derecha queda libre para la visualización de conexiones
+    ticket_col, _free_col = st.columns([5, 4], gap="large")
+    with ticket_col:
+        # El selector es la línea "lleva" del tiquete: un widget no cabe dentro de HTML,
+        # así que el contenedor hace de papel y el tiquete se arma en tres partes
+        with st.container(key="cc_ticket"):
+            ui.render(_ticket_head())
+            render_product_picker(products, product_id)
+            if error:
+                st.error(f"No se pudieron generar las recomendaciones: {error}")
+            else:
+                ui.render(_ticket_body(data))
 
-    # Product selection for exploration
-    if st.session_state.get('products', []):
-        # Show current stats
-        st.caption(f"📊 Disponible para explorar: {len(st.session_state.products)} productos")
+    if not error:
+        with st.expander("Ver detalle técnico: cómo se calculó", icon=":material/calculate:"):
+            _render_technical_detail(data)
 
-        product_options = {f"{p['id']} - {p['name']}": p['id'] for p in st.session_state.products}
+    with st.expander("Análisis avanzado: BFS, DFS y alcanzabilidad", icon=":material/account_tree:"):
+        _render_advanced_analysis(product_id)
 
-        # Smart default: select product with most relationships if possible
-        default_index = 0
-        if st.session_state.products:
-            # Count relationships per product
-            rel_counts = {}
-            for rel in st.session_state.relationships:
-                rel_counts[rel['product_a']] = rel_counts.get(rel['product_a'], 0) + 1
-                rel_counts[rel['product_b']] = rel_counts.get(rel['product_b'], 0) + 1
 
-            if rel_counts:
-                most_connected = max(rel_counts, key=rel_counts.get)
-                try:
-                    default_index = list(product_options.values()).index(most_connected)
-                except ValueError:
-                    default_index = 0
+RULE = '<hr class="cc-ticket-rule">'
 
-        selected_product_label = st.selectbox(
-            "🎯 Seleccione producto de origen:",
-            options=list(product_options.keys()),
-            index=default_index,
-            help="El producto desde el cual comenzará la exploración"
+
+def _ticket_head():
+    return (
+        '<div class="cc-ticket-flow"><div class="cc-ticket-head"><div class="cc-ticket-name">Tiquete del cliente</div>'
+        '<div class="cc-ticket-sub">Datos sintéticos de demostración</div></div>' + RULE + '</div>'
+    )
+
+
+def _ticket_body(data):
+    """Lo que se ofrece al cliente: directas, indirectas y lo que no se recomienda."""
+    direct = [p for p in data["proposals"] if p["type"] == DIRECT]
+    indirect = [p for p in data["proposals"] if p["type"] == INDIRECT]
+
+    sections = []
+    if not data["proposals"]:
+        sections.append(
+            f'<div class="cc-ticket-group"><div class="cc-ticket-title"><h2>Por ahora no hay qué recomendar</h2></div>'
+            f'<p class="cc-ticket-empty">{escape(_empty_reason(data))}</p></div>'
         )
-        selected_product_id = product_options[selected_product_label] if selected_product_label else None
+    if direct:
+        sections.append(_ticket_group("Ofrézcale", "Conexión directa", "solid", direct))
+    if indirect:
+        title = "También le puede interesar" if direct else "Ofrézcale"
+        sections.append(_ticket_group(title, "Conexión indirecta", "outline", indirect))
 
-        # Show info about selected product
-        if selected_product_id:
-            selected_product = next((p for p in st.session_state.products if p['id'] == selected_product_id), None)
-            if selected_product:
-                # Count direct relationships
-                direct_rels = sum(1 for r in st.session_state.relationships
-                                if r['product_a'] == selected_product_id or r['product_b'] == selected_product_id)
-                st.info(f"📦 **{selected_product['name']}** tiene {direct_rels} relaciones directas")
+    note = _unrelated_note(data)
+    if note:
+        sections.append(f'<p class="cc-ticket-foot">{escape(note)}</p>')
 
-        _render_advanced_analysis(selected_product_id)
-    else:
-        st.info("📦 No hay productos disponibles para explorar. Agregue algunos productos primero.")
-    st.markdown('</div>', unsafe_allow_html=True)
+    return f'<div class="cc-ticket-flow">{RULE}{RULE.join(sections)}</div>'
+
+
+def _ticket_group(title, connection, tag_style, proposals):
+    lines = "".join(_ticket_line(proposal) for proposal in proposals)
+    return (
+        f'<div class="cc-ticket-group"><div class="cc-ticket-title"><h2>{escape(title)}</h2>'
+        f'{ui.tag(connection, tag_style)}</div>{lines}</div>'
+    )
+
+
+def _ticket_line(proposal):
+    level, _ = ui.strength_band(proposal["strength"])
+    return (
+        '<div class="cc-line"><div class="cc-line-main">'
+        f'<strong>{escape(proposal["product_name"])}</strong><span class="cc-leader"></span>'
+        f'{ui.level_pips(proposal["strength"])}<span class="cc-line-level">{level}</span></div>'
+        f'<p>{escape(_plain_reason(proposal))}</p></div>'
+    )
+
+
+def _empty_reason(data):
+    product = data["product_name"]
+    if data["direct_connections"]:
+        return f"{product} tiene relaciones, pero son muy débiles para recomendarlas con confianza."
+    return f"Todavía no hay compras registradas que relacionen {product} con otros productos."
+
+
+def _plain_reason(proposal):
+    names = proposal["path_names"]
+    if proposal["type"] == DIRECT:
+        return f"Aparece en compras junto con {names[0]}."
+    return f"{names[0]} se compra con {names[1]}, y {names[1]} se compra con {names[2]}."
+
+
+def _unrelated_note(data):
+    names = [e["product_name"] for e in data["excluded"] if e["reason_code"] == "otro_componente"]
+    if not names:
+        return ""
+
+    product = data["product_name"]
+    if len(names) == 1:
+        return f"No se recomienda {names[0]}: no hay compras que lo relacionen con {product}."
+    listed = ", ".join(names[:-1]) + f" y {names[-1]}"
+    return f"No se recomiendan {listed}: no hay compras que los relacionen con {product}."
+
+
+def _render_technical_detail(data):
+    rule = data["rule"]
+    specs = (
+        ("Alcance", f"{rule['max_steps']} pasos"),
+        ("Directa", f"≥ {format_pct(rule['min_direct'])}"),
+        ("Indirecta", f"≥ {format_pct(rule['min_indirect'])}"),
+        ("Máximo", f"{rule['limit']} productos"),
+    )
+    items = "".join(f'<span class="cc-spec">{name} <strong>{value}</strong></span>' for name, value in specs)
+    ui.render(f'<div class="cc-specs cc-specs-start">{items}</div>')
+
+    if data["proposals"]:
+        ui.section("Productos recomendados", "Primero las conexiones directas, luego las indirectas; cada grupo por fuerza")
+        ui.render(ui.table(
+            [("#", True), ("Producto", False), ("Tipo", False), ("Fuerza", True), ("Camino y peso", False), ("Razón", False)],
+            [
+                [
+                    p["rank"],
+                    f"<strong>{escape(p['product_name'])}</strong> {ui.product_id(p['product_id'])}",
+                    escape(p["type"].capitalize()),
+                    format_pct(p["strength"]),
+                    ui.path_chain(p["path_names"], p["path_weights"]),
+                    escape(p["reason"]),
+                ]
+                for p in data["proposals"]
+            ],
+        ))
+
+    if data["direct_connections"]:
+        ui.section("Conexiones directas registradas")
+        ui.render(ui.table(
+            [("Producto", False), ("Co-compra", True), ("", False), ("Fuerza", False)],
+            [
+                [
+                    f"<strong>{escape(c['product_name'])}</strong> {ui.product_id(c['product_id'])}",
+                    format_pct(c["weight"]),
+                    ui.meter(c["weight"]),
+                    ui.strength(c["weight"]),
+                ]
+                for c in data["direct_connections"]
+            ],
+        ))
+
+    if data["excluded"]:
+        ui.section("Productos descartados")
+        ui.render(ui.table(
+            [("Producto", False), ("Motivo", False)],
+            [
+                [f"<strong>{escape(item['product_name'])}</strong> {ui.product_id(item['product_id'])}",
+                 escape(item["reason"])]
+                for item in data["excluded"]
+            ],
+        ))
 
 
 def _render_advanced_analysis(product_id):
