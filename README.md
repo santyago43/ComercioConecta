@@ -1,4 +1,105 @@
-# ComercioConecta - Feature 2: Exploración de Relaciones
+# ComercioConecta
+
+Red de productos de tiendas de barrio para proponer combinaciones comerciales explicables. API Flask (puerto 5000) con grafo propio en memoria y frontend Streamlit (puerto 8501). Datos sintéticos.
+
+- [Feature 3: Propuesta comercial justificable](#feature-3-propuesta-comercial-justificable)
+- [Feature 2: Exploración de relaciones](#feature-2-exploración-de-relaciones)
+
+## Instalación y ejecución
+
+```bash
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+start.bat                       # API en :5000 y Streamlit en :8501
+```
+
+Manual: `.\.venv\Scripts\python.exe api.py` y `.\.venv\Scripts\streamlit.exe run frontend/app.py`.
+Al reiniciar la API vuelven los datos iniciales: 9 productos, 8 relaciones y 3 grupos.
+
+---
+
+# Feature 3: Propuesta comercial justificable
+
+El encargado elige un producto y recibe hasta 5 productos propuestos, cada uno con su razón basada en la red. Si no hay relación demostrable, el sistema lo dice y no inventa nada.
+
+## Modelo
+
+- **Nodos:** productos. **Aristas:** co-compra registrada.
+- **No dirigido:** "se compran juntos" es simétrico, A–B vale lo mismo que B–A. No indica qué se compra primero.
+- **Peso (0 < peso ≤ 1):** índice simétrico de co-compra, sintético. No es una probabilidad calibrada.
+- **Representación:** lista de adyacencia propia (diccionario producto → vecinos con peso), sin NetworkX.
+
+## Regla de propuesta (`recommendation.py`)
+
+1. Solo productos a **máximo 2 pasos** del origen.
+2. **Directas primero**, luego indirectas; cada grupo ordenado por fuerza (desempate por ID).
+3. Mínimos: **30 %** para directas y **50 %** para indirectas (lo inferido debe ser más fuerte).
+4. **Indirecta = producto de los pesos** del camino más fuerte. Se revisan todos los caminos de 2 pasos, así el resultado no depende del orden de carga.
+5. Máximo **5 productos**. Nunca el mismo producto ni productos de otro grupo.
+6. Todo producto propuesto o descartado lleva su razón (`reason` y `reason_code`).
+
+Complejidad: recorre vecinos y vecinos de vecinos, y calcula los grupos para explicar los descartes. En el peor caso, O(V + E).
+
+## Endpoint
+
+### `GET /recommendations/<product_id>`
+
+Ejemplo con Leche (P001) y los datos iniciales:
+
+```json
+{
+  "product_id": "P001", "product_name": "Leche",
+  "rule": {"min_direct": 0.3, "min_indirect": 0.5, "limit": 5, "max_steps": 2, "description": "..."},
+  "direct_connections": [{"product_id": "P002", "product_name": "Pan", "weight": 0.85}],
+  "proposals_count": 4,
+  "proposals": [
+    {"rank": 1, "product_id": "P002", "type": "directa", "strength": 0.85,
+     "path": ["P001", "P002"], "reason": "Relación directa: se compra junto con Leche (fuerza 85%)."},
+    {"rank": 4, "product_id": "P004", "type": "indirecta", "strength": 0.765,
+     "path": ["P001", "P002", "P004"],
+     "reason": "Relación indirecta vía Pan: Leche–Pan 85% × Pan–Mantequilla 90% = 76.5%. También conecta vía Huevos (45.5%)."}
+  ],
+  "excluded": [
+    {"product_id": "P006", "reason_code": "indirecta_debil", "reason": "..."},
+    {"product_id": "P007", "reason_code": "otro_componente", "reason": "Pertenece a otro grupo: no hay relación demostrable."}
+  ],
+  "message": "4 producto(s) propuesto(s) para Leche."
+}
+```
+
+(El ejemplo omite campos para abreviar.) Motivos de descarte: `directa_debil`, `indirecta_debil`, `fuera_del_limite`, `fuera_del_alcance`, `otro_componente`.
+
+| Código | Causa |
+|--------|-------|
+| 200 | Éxito, incluso con propuesta vacía (producto aislado o relaciones débiles) |
+| 404 | Producto inexistente o red vacía |
+
+## Frontend
+
+Pantalla **Recomendaciones**: tiquete con selector de producto, propuestas en lenguaje de tienda, y desplegables con el detalle técnico y el análisis avanzado (BFS/DFS). La pantalla **Cómo funciona** explica modelado, estructura, algoritmo, complejidad, caso borde, evidencia, límites y sesgos.
+
+## Límites y sesgos de la regla
+
+- Una directa débil (≥ 30 %) queda por encima de una indirecta más fuerte.
+- Los mínimos y el tope de 5 son criterio de negocio, sin calibrar con datos reales: pueden dejar fuera relaciones válidas.
+- Multiplicar pesos hace que las cadenas largas pierdan fuerza.
+- Los productos con más relaciones tienen más caminos para aparecer como indirectos.
+- Los datos son sintéticos: no se concluye nada sobre clientes reales.
+
+## Pruebas
+
+```bash
+.\.venv\Scripts\python.exe -m unittest test_recommendation test_product_picker
+.\.venv\Scripts\python.exe acceptance_test_feature3.py   # requiere la API
+```
+
+La aceptación cubre 9 escenarios (28 comprobaciones): caso normal, grupos separados, producto aislado, red escasa, fuera del alcance de 2 pasos, orden de carga, producto inexistente, dato inválido y red vacía. **Borra los datos en memoria: reiniciar la API después.**
+
+Bitácora de decisiones de IA: `BITACORA_IA.md`.
+
+---
+
+# Feature 2: Exploración de relaciones
 
 ## Resumen
 
@@ -15,7 +116,6 @@ Feature 2 extiende la red comercial inicial con capacidades avanzadas de **anál
 | **Path Completo** | Camino exacto entre producto origen y destino | Explicar *por qué* se recomienda cada producto |
 | **Reachability** | Resumen alcanzables vs no alcanzables con motivo | Distinguir "no relacionado" de "relacionado pero lejos" |
 | **Componentes Conexos** | Grupos de productos interconectados | Identificar categorías aisladas que necesitan cruce |
-| **Visualización 2D** | Layout circular concéntrico interactivo | Ver de un vistazo relaciones y aislamientos |
 
 ---
 
@@ -94,57 +194,9 @@ Lista todos los componentes conexos (existente, mejorado en Feature 2).
 
 ---
 
-## Frontend - Pestaña Exploración 🔍
+## Frontend - Exploración
 
-### Controles
-- **Selector de producto**: Dropdown con "ID - Nombre", default al más conectado
-- **Slider profundidad**: 1-4 (default 2), con explicación contextual:
-  - 1: Solo relaciones directas (amigos inmediatos)
-  - 2: Hasta 2 pasos (amigos de amigos) ⭐ *recomendado*
-  - 3: Hasta 3 pasos
-  - 4: Cadenas largas
-- **Botones**: Explorar BFS / Explorar DFS
-
-### Resultados (Tabla Enriquecida)
-| Columna | Descripción |
-|---------|-------------|
-| Distancia | "1 paso", "2 pasos", etc. |
-| Producto | "Nombre (ID)" |
-| Peso Acumulado | Porcentaje (ej: 76.5%) |
-| Fuerza | 🟢 Fuerte (≥70%) / 🟡 Moderada (40-69%) / 🔴 Débil (<40%) |
-| Relevancia | ★★★★★ visual basado en peso |
-
-### Visualización 2D (Layout Circular Concéntrico)
-```
-                    ┌─────────────────┐
-                    │   DESCONECTADOS │  ← Gris, área aparte
-                    │  (otro componente│
-                    │   o aislados)   │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │   ANILLO EXTERIOR  │                    │
-        │   (distancia 2+)   │                    │
-        │  ● ● ● ● ● ● ● ●   │                    │
-        └────────┬───────────┘                    │
-                 │                               │
-        ┌────────▼────────┐                       │
-        │  ANILLO INTERIOR│                       │
-        │  (distancia 1)  │                       │
-        │   ● ● ● ● ● ●   │                       │
-        └────────┬────────┘                       │
-                 │                               │
-        ┌────────▼────────┐                       │
-        │    CENTRO       │                       │
-        │  PRODUCTO ORIGEN│                       │
-        │      ● ●        │                       │
-        └─────────────────┘                       │
-```
-
-**Codificación visual:**
-- **Nodos**: Tamaño fijo, label con nombre + ID
-- **Aristas**: Grosor ∝ peso, Color: 🟢 Verde (alto) → 🟡 Amarillo → 🔴 Rojo (bajo)
-- **Leyenda**: Incluida en la visualización
+Hoy vive dentro de la pantalla **Recomendaciones**, en el desplegable de análisis avanzado: slider de pasos (1 a 4, por defecto 2) y recorridos BFS/DFS con tabla de distancia, peso acumulado y fuerza. El mapa 2D de Feature 2 se retiró y queda para la Feature 4.
 
 ---
 
@@ -296,7 +348,6 @@ comercioconecta/
 | **Descubrir influencers** | DFS desde producto nuevo | 2-3 |
 | **Ver categorías aisladas** | GET /components | - |
 | **Análisis completo producto** | GET /reachability/<id> | 2 |
-| **Visualizar en 2D** | Pestaña Exploración → botones | 2 |
 
 ---
 
